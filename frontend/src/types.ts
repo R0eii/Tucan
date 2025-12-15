@@ -17,7 +17,7 @@ export interface Device {
   lastUpdate: Date;
   department: string;
   location: string;
-  model: string;
+  deviceModel: string;
   os: string;
   battery: number;
   signalStrength: number;

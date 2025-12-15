@@ -141,7 +141,7 @@ export const generateMockDevices = (count: number): Device[] => {
       lastUpdate: randomRecentDate(status === "ok" ? 5 : 60),
       department: dept,
       location,
-      model: [
+      deviceModel: [
         "iPhone 14 Pro",
         "iPhone 15",
         "Samsung S23",

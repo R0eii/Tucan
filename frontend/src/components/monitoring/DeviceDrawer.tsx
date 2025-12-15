@@ -480,7 +480,11 @@ export default function DeviceDrawer({
             <InfoCard icon={Shield} label="MAC" value={device.mac} />
           </Grid>
           <Grid size={{ xs: 6 }}>
-            <InfoCard icon={Smartphone} label="Model" value={device.model} />
+            <InfoCard
+              icon={Smartphone}
+              label="Model"
+              value={device.deviceModel}
+            />
           </Grid>
           <Grid size={{ xs: 6 }}>
             <InfoCard icon={Cpu} label="OS" value={device.os} />
