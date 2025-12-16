@@ -7,23 +7,39 @@ import {
   Container,
   Divider,
   IconButton,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
   Menu,
   MenuItem,
+  Popover,
   Toolbar,
   Typography,
 } from "@mui/material";
-import { motion } from "framer-motion";
 import {
+  AlertTriangle,
   Bell,
   Building2,
+  CheckCircle,
   ChevronDown,
+  ChevronRight,
   LogOut,
   RefreshCw,
-  Settings,
-  User,
+  User as UserIcon,
+  WifiOff,
 } from "lucide-react";
-import { useState } from "react";
-import { companies } from "./mockData";
+import { useEffect, useState } from "react";
+import { useAuth } from "../../context/AuthContext";
+import type { Device } from "../../types";
+import ProfileDialog from "../common/ProfileDialog";
+import CompanyManagerDialog from "./CompanyManagerDialog";
+
+interface CompanyStats {
+  id: number;
+  name: string;
+  deviceCount: number;
+}
 
 interface TopNavbarProps {
   selectedCompany: string;
@@ -31,6 +47,8 @@ interface TopNavbarProps {
   lastUpdate: Date;
   isRefreshing: boolean;
   onRefresh: () => void;
+  alerts: Device[];
+  onNotificationClick: (device: Device) => void; // New Prop
 }
 
 export default function TopNavbar({
@@ -39,309 +57,366 @@ export default function TopNavbar({
   lastUpdate,
   isRefreshing,
   onRefresh,
+  alerts,
+  onNotificationClick,
 }: TopNavbarProps) {
-  const [notifications] = useState(3);
-
-  // Menu States
+  const { user, logout } = useAuth();
+  const [companies, setCompanies] = useState<CompanyStats[]>([]);
   const [companyAnchor, setCompanyAnchor] = useState<null | HTMLElement>(null);
+  const [isCompanyManagerOpen, setIsCompanyManagerOpen] = useState(false);
+
+  const [notificationAnchor, setNotificationAnchor] =
+    useState<null | HTMLElement>(null);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [userAnchor, setUserAnchor] = useState<null | HTMLElement>(null);
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    });
-  };
+  useEffect(() => {
+    fetch("http://localhost:5000/api/devices/stats/companies")
+      .then((res) => res.json())
+      .then((data) => setCompanies(data))
+      .catch((err) => console.error("Failed to load companies", err));
+  }, []);
 
   return (
-    <AppBar
-      position="sticky"
-      color="default"
-      elevation={0}
-      sx={{ borderBottom: "1px solid #e2e8f0", bgcolor: "white" }}
-    >
-      <Container maxWidth={false} sx={{ maxWidth: "1600px" }}>
-        <Toolbar
-          disableGutters
-          sx={{ justifyContent: "space-between", height: 64 }}
-        >
-          {/* Logo & Brand */}
-          <Box sx={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-              {/* Logo Container */}
-              <Box
-                sx={{
-                  position: "relative",
-                  display: "flex",
-                  alignItems: "center",
-                }}
-              >
+    <>
+      <AppBar
+        position="sticky"
+        color="default"
+        elevation={0}
+        sx={{ borderBottom: "1px solid #e2e8f0", bgcolor: "white" }}
+      >
+        <Container maxWidth={false} sx={{ maxWidth: "1600px" }}>
+          <Toolbar
+            disableGutters
+            sx={{ justifyContent: "space-between", height: 64 }}
+          >
+            {/* Logo Section */}
+            <Box sx={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
                 <Box
                   component="img"
                   src="/logo.svg"
-                  alt="Tucan Logo"
-                  sx={{
-                    width: 44,
-                    height: 44,
-                    // Added a slight transition for a premium feel
-                    transition: "transform 0.2s ease-in-out",
-                    "&:hover": {
-                      transform: "scale(1.08) rotate(-2deg)",
-                    },
-                  }}
+                  alt="Tucan"
+                  sx={{ width: 40, height: 40 }}
                 />
-
-                {/* Live Status Indicator (The green dot) */}
-                <Box
-                  sx={{
-                    position: "absolute",
-                    bottom: -2,
-                    right: -2,
-                    width: 12,
-                    height: 12,
-                    bgcolor: "#10b981", // Emerald 500
-                    borderRadius: "50%",
-                    border: "2px solid #fff",
-                    boxShadow: "0 0 0 2px rgba(16, 185, 129, 0.2)",
-                    // Simple pulse animation to show it's "Live"
-                    animation: "pulse 2s infinite",
-                    "@keyframes pulse": {
-                      "0%": { boxShadow: "0 0 0 0 rgba(16, 185, 129, 0.4)" },
-                      "70%": { boxShadow: "0 0 0 6px rgba(16, 185, 129, 0)" },
-                      "100%": { boxShadow: "0 0 0 0 rgba(16, 185, 129, 0)" },
-                    },
-                  }}
-                />
-              </Box>
-
-              {/* Brand Text */}
-              <Box>
                 <Typography
                   variant="h6"
-                  sx={{
-                    color: "#0f172a", // Slate 900
-                    fontWeight: 800,
-                    fontSize: "1.25rem",
-                    lineHeight: 1,
-                    letterSpacing: "-0.02em",
-                  }}
+                  sx={{ fontWeight: 800, color: "#0f172a" }}
                 >
                   Tucan
                 </Typography>
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: "#64748b", // Slate 500
-                    fontWeight: 700,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.1em",
-                    fontSize: "0.65rem",
-                    display: "block",
-                    mt: 0.5,
-                  }}
-                >
-                  Monitoring Suite
-                </Typography>
               </Box>
-            </Box>
 
-            {/* Company Selector */}
-            <Box>
-              <Button
-                variant="outlined"
-                onClick={(e) => setCompanyAnchor(e.currentTarget)}
-                sx={{
-                  borderColor: "#e2e8f0",
-                  color: "#334155",
-                  textTransform: "none",
-                  "&:hover": { bgcolor: "#f1f5f9", borderColor: "#cbd5e1" },
-                }}
-                startIcon={<Building2 size={16} />}
-                endIcon={<ChevronDown size={16} />}
-              >
-                {selectedCompany}
-              </Button>
-              <Menu
-                anchorEl={companyAnchor}
-                open={Boolean(companyAnchor)}
-                onClose={() => setCompanyAnchor(null)}
-              >
-                <Typography
-                  variant="caption"
+              <Box>
+                <Button
+                  variant="outlined"
+                  onClick={(e) => setCompanyAnchor(e.currentTarget)}
                   sx={{
-                    px: 2,
-                    py: 1,
-                    color: "#94a3b8",
-                    fontWeight: 600,
-                    display: "block",
+                    borderColor: "#e2e8f0",
+                    color: "#334155",
+                    textTransform: "none",
                   }}
+                  startIcon={<Building2 size={16} />}
+                  endIcon={<ChevronDown size={16} />}
                 >
-                  SELECT COMPANY
-                </Typography>
-                <Divider />
-                {companies.map((company) => (
+                  {selectedCompany}
+                </Button>
+                <Menu
+                  anchorEl={companyAnchor}
+                  open={Boolean(companyAnchor)}
+                  onClose={() => setCompanyAnchor(null)}
+                >
                   <MenuItem
-                    key={company.id}
                     onClick={() => {
-                      setSelectedCompany(company.name);
+                      setSelectedCompany("All Companies");
                       setCompanyAnchor(null);
                     }}
-                    sx={{
-                      gap: 2,
-                      minWidth: 200,
-                      justifyContent: "space-between",
-                    }}
                   >
-                    <Typography
-                      fontWeight={company.name === selectedCompany ? 600 : 400}
-                    >
-                      {company.name}
-                    </Typography>
-                    <Box
-                      component="span"
+                    All Companies
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      setIsCompanyManagerOpen(true);
+                      setCompanyAnchor(null);
+                    }}
+                    sx={{ color: "primary.main", fontWeight: 600 }}
+                  >
+                    Manage Companies...
+                  </MenuItem>
+                  <Divider />
+                  {companies.map((comp) => (
+                    <MenuItem
+                      key={comp.name}
+                      onClick={() => {
+                        setSelectedCompany(comp.name);
+                        setCompanyAnchor(null);
+                      }}
                       sx={{
-                        bgcolor: "#f1f5f9",
-                        px: 1,
-                        py: 0.5,
-                        borderRadius: 1,
-                        fontSize: "0.75rem",
+                        gap: 2,
+                        justifyContent: "space-between",
+                        minWidth: 200,
                       }}
                     >
-                      {company.deviceCount} devices
-                    </Box>
-                  </MenuItem>
-                ))}
-              </Menu>
-            </Box>
-          </Box>
+                      {comp.name}
+                      <Box
+                        component="span"
+                        sx={{
+                          bgcolor: "#f1f5f9",
+                          px: 1,
+                          borderRadius: 1,
+                          fontSize: "0.75rem",
+                        }}
+                      >
+                        {comp.deviceCount}
+                      </Box>
+                    </MenuItem>
+                  ))}
+                </Menu>
 
-          {/* Right Section */}
-          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-            <Box
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                gap: 2,
-                px: 2,
-                py: 0.5,
-                bgcolor: "#f8fafc",
-                borderRadius: 2,
-                border: "1px solid #f1f5f9",
-              }}
-            >
-              <Box sx={{ textAlign: "right" }}>
-                <Typography
-                  variant="caption"
-                  sx={{ color: "#94a3b8", display: "block", lineHeight: 1 }}
-                >
-                  LAST UPDATE
-                </Typography>
+                <CompanyManagerDialog
+                  open={isCompanyManagerOpen}
+                  onClose={() => setIsCompanyManagerOpen(false)}
+                  onChange={onRefresh} // Refresh navbar data when companies change
+                />
+              </Box>
+            </Box>
+
+            {/* Right Section */}
+            <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 2,
+                  px: 2,
+                  py: 0.5,
+                  bgcolor: "#f8fafc",
+                  borderRadius: 2,
+                }}
+              >
                 <Typography
                   variant="body2"
-                  sx={{
-                    fontFamily: "monospace",
-                    fontWeight: 500,
-                    color: "#334155",
-                  }}
+                  sx={{ fontFamily: "monospace", color: "#64748b" }}
                 >
-                  {formatTime(lastUpdate)}
+                  {lastUpdate.toLocaleTimeString()}
                 </Typography>
-              </Box>
-              <Divider orientation="vertical" flexItem />
-              <IconButton
-                size="small"
-                onClick={onRefresh}
-                disabled={isRefreshing}
-              >
-                <motion.div
-                  animate={{ rotate: isRefreshing ? 360 : 0 }}
-                  transition={{
-                    duration: 1,
-                    repeat: isRefreshing ? Infinity : 0,
-                    ease: "linear",
-                  }}
+                <IconButton
+                  size="small"
+                  onClick={onRefresh}
+                  disabled={isRefreshing}
                 >
-                  <RefreshCw
-                    size={16}
-                    color={isRefreshing ? "#f59e0b" : "#64748b"}
-                  />
-                </motion.div>
-              </IconButton>
-            </Box>
+                  <RefreshCw size={16} className={isRefreshing ? "spin" : ""} />
+                </IconButton>
+              </Box>
 
-            <IconButton>
-              <Badge
-                badgeContent={notifications}
-                color="error"
-                sx={{
-                  "& .MuiBadge-badge": {
-                    fontSize: 10,
-                    height: 16,
-                    minWidth: 16,
+              {/* Notifications */}
+              <IconButton
+                onClick={(e) => setNotificationAnchor(e.currentTarget)}
+              >
+                <Badge badgeContent={alerts.length} color="error">
+                  <Bell size={20} color="#64748b" />
+                </Badge>
+              </IconButton>
+
+              <Popover
+                open={Boolean(notificationAnchor)}
+                anchorEl={notificationAnchor}
+                onClose={() => setNotificationAnchor(null)}
+                anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+                transformOrigin={{ vertical: "top", horizontal: "right" }}
+                // ✅ FIX: Use 'elevation={0}' to remove default MUI shadow which might look like a double border
+                // ✅ FIX: Custom styled Paper with clean border color
+                elevation={0}
+                PaperProps={{
+                  sx: {
+                    width: 360,
+                    maxHeight: 480,
+                    mt: 1.5,
+                    borderRadius: 3,
+                    boxShadow: "0 4px 20px rgba(0,0,0,0.1)", // Smooth shadow
+                    border: "1px solid #f1f5f9", // Very subtle border
+                    overflow: "hidden",
                   },
                 }}
               >
-                <Bell size={20} color="#64748b" />
-              </Badge>
-            </IconButton>
-
-            <Button
-              onClick={(e) => setUserAnchor(e.currentTarget)}
-              sx={{ textTransform: "none", color: "#334155" }}
-            >
-              <Avatar
-                sx={{
-                  width: 32,
-                  height: 32,
-                  bgcolor: "#7c3aed",
-                  mr: 1,
-                  fontSize: 14,
-                }}
-              >
-                IR
-              </Avatar>
-              <Box
-                sx={{ textAlign: "left", display: { xs: "none", sm: "block" } }}
-              >
-                <Typography variant="body2" fontWeight={500}>
-                  Itamar Raveh
-                </Typography>
-                <Typography
-                  variant="caption"
-                  sx={{ color: "#94a3b8", display: "block", lineHeight: 1 }}
+                <Box
+                  sx={{
+                    p: 2,
+                    bgcolor: "#f8fafc",
+                    borderBottom: "1px solid #e2e8f0",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
                 >
-                  Administrator
-                </Typography>
-              </Box>
-              <ChevronDown size={16} style={{ marginLeft: 8, opacity: 0.5 }} />
-            </Button>
+                  <Typography
+                    variant="subtitle2"
+                    fontWeight={700}
+                    color="#334155"
+                  >
+                    Notifications
+                  </Typography>
+                  <Box
+                    component="span"
+                    sx={{
+                      bgcolor: "#fee2e2",
+                      color: "#ef4444",
+                      px: 1.5,
+                      py: 0.5,
+                      borderRadius: 2,
+                      fontSize: "0.7rem",
+                      fontWeight: 800,
+                    }}
+                  >
+                    {alerts.length} ACTIVE
+                  </Box>
+                </Box>
+                {alerts.length === 0 ? (
+                  <Box sx={{ p: 4, textAlign: "center", color: "#94a3b8" }}>
+                    <CheckCircle
+                      size={32}
+                      style={{ marginBottom: 8, opacity: 0.5 }}
+                    />
+                    <Typography variant="body2">
+                      All systems operational
+                    </Typography>
+                  </Box>
+                ) : (
+                  <List
+                    disablePadding
+                    sx={{ overflowY: "auto", maxHeight: 400 }}
+                  >
+                    {alerts.map((device) => (
+                      <ListItem
+                        key={device.id}
+                        component="button"
+                        onClick={() => {
+                          onNotificationClick(device);
+                          setNotificationAnchor(null);
+                        }}
+                        sx={{
+                          borderBottom: "1px solid #f8fafc", // Ultra subtle separator
+                          py: 2,
+                          transition: "all 0.2s",
+                          "&:hover": { bgcolor: "#f8fafc" },
+                        }}
+                      >
+                        <ListItemIcon sx={{ minWidth: 40 }}>
+                          <Box
+                            sx={{
+                              p: 1,
+                              borderRadius: "50%",
+                              bgcolor:
+                                device.status === "error"
+                                  ? "#fef2f2"
+                                  : "#fffbeb",
+                              color:
+                                device.status === "error"
+                                  ? "#ef4444"
+                                  : "#f59e0b",
+                            }}
+                          >
+                            {device.status === "error" ? (
+                              <WifiOff size={16} />
+                            ) : (
+                              <AlertTriangle size={16} />
+                            )}
+                          </Box>
+                        </ListItemIcon>
+                        <ListItemText
+                          primary={
+                            <Typography
+                              variant="body2"
+                              fontWeight={600}
+                              color="#334155"
+                            >
+                              {device.name}
+                            </Typography>
+                          }
+                          secondary={
+                            <Typography
+                              variant="caption"
+                              color="#64748b"
+                              sx={{ display: "block", mt: 0.5 }}
+                            >
+                              {device.errorMessage || "Unknown Warning"}
+                            </Typography>
+                          }
+                        />
+                        <ChevronRight size={14} color="#cbd5e1" />
+                      </ListItem>
+                    ))}
+                  </List>
+                )}
+              </Popover>
 
-            <Menu
-              anchorEl={userAnchor}
-              open={Boolean(userAnchor)}
-              onClose={() => setUserAnchor(null)}
-              anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-              transformOrigin={{ vertical: "top", horizontal: "right" }}
-            >
-              <MenuItem onClick={() => setUserAnchor(null)}>
-                <User size={16} style={{ marginRight: 8 }} /> Profile
-              </MenuItem>
-              <MenuItem onClick={() => setUserAnchor(null)}>
-                <Settings size={16} style={{ marginRight: 8 }} /> Settings
-              </MenuItem>
-              <Divider />
-              <MenuItem
-                onClick={() => setUserAnchor(null)}
-                sx={{ color: "#dc2626" }}
+              {/* User Menu */}
+              <Button
+                onClick={(e) => setUserAnchor(e.currentTarget)}
+                sx={{ textTransform: "none", color: "#334155" }}
               >
-                <LogOut size={16} style={{ marginRight: 8 }} /> Sign Out
-              </MenuItem>
-            </Menu>
-          </Box>
-        </Toolbar>
-      </Container>
-    </AppBar>
+                <Avatar
+                  sx={{
+                    width: 32,
+                    height: 32,
+                    bgcolor: "#7c3aed",
+                    mr: 1,
+                    fontSize: 14,
+                  }}
+                >
+                  {user?.name.charAt(0).toUpperCase()}
+                </Avatar>
+                <Box
+                  sx={{
+                    textAlign: "left",
+                    display: { xs: "none", sm: "block" },
+                  }}
+                >
+                  <Typography variant="body2" fontWeight={500}>
+                    {user?.name}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{ color: "#94a3b8", display: "block" }}
+                  >
+                    {user?.role}
+                  </Typography>
+                </Box>
+                <ChevronDown
+                  size={16}
+                  style={{ marginLeft: 8, opacity: 0.5 }}
+                />
+              </Button>
+
+              <Menu
+                anchorEl={userAnchor}
+                open={Boolean(userAnchor)}
+                onClose={() => setUserAnchor(null)}
+                anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+                transformOrigin={{ vertical: "top", horizontal: "right" }}
+              >
+                <MenuItem
+                  onClick={() => {
+                    setUserAnchor(null);
+                    setIsProfileOpen(true);
+                  }}
+                >
+                  <UserIcon size={16} style={{ marginRight: 8 }} /> My Profile
+                </MenuItem>
+                <Divider />
+                <MenuItem onClick={logout} sx={{ color: "#dc2626" }}>
+                  <LogOut size={16} style={{ marginRight: 8 }} /> Sign Out
+                </MenuItem>
+              </Menu>
+            </Box>
+          </Toolbar>
+        </Container>
+      </AppBar>
+
+      <ProfileDialog
+        open={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+      />
+    </>
   );
 }

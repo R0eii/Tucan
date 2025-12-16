@@ -17,11 +17,10 @@ import FilterBar from "../components/monitoring/FilterBar";
 import KPICards from "../components/monitoring/KPICards";
 import TopNavbar from "../components/monitoring/TopNavbar";
 
-import {
-  generateMockDevices,
-  simulateStatusChange,
-} from "../components/monitoring/mockData";
 import type { DashboardStats, Device } from "../types";
+import AddDeviceDialog from "../components/monitoring/AddDeviceDialog";
+
+const API_URL = "http://localhost:5000/api/devices";
 
 export default function Dashboard() {
   const [devices, setDevices] = useState<Device[]>([]);
@@ -31,6 +30,7 @@ export default function Dashboard() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isAddDeviceOpen, setIsAddDeviceOpen] = useState(false);
 
   // Search States
   const [searchQuery, setSearchQuery] = useState("");
@@ -38,51 +38,112 @@ export default function Dashboard() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [changedDeviceIds, setChangedDeviceIds] = useState(new Set<string>());
 
-  // 1. Debounce Logic: Updates 'debouncedSearch' 300ms after user stops typing
+  const alerts = devices.filter((d) => d.status !== "ok");
+
+  // 1. Debounce Logic
   useEffect(() => {
     const handler = setTimeout(() => setDebouncedSearch(searchQuery), 300);
     return () => clearTimeout(handler);
   }, [searchQuery]);
 
-  // 2. Initialize/Switch Company Logic
-  useEffect(() => {
-    setIsLoading(true);
-    // Simulate network delay
-    const timer = setTimeout(() => {
-      setDevices(generateMockDevices(300));
+  // 2. Fetch Data from Real Backend
+  const fetchDevices = useCallback(async () => {
+    try {
+      // אם בחרנו "All Companies" נשלח all, אחרת נשלח את שם החברה
+      // הערה: יש לוודא ששמות החברות ב-Frontend תואמים למה שהכנסנו ב-Seed ב-Backend
+      const url = new URL(API_URL);
+      if (selectedCompany !== "All Companies") {
+        url.searchParams.append("company", selectedCompany);
+      }
+
+      const res = await fetch(url.toString());
+      if (!res.ok) throw new Error("Failed to fetch");
+
+      const data: Device[] = await res.json();
+
+      // המרת מחרוזות תאריך לאובייקטי Date אמיתיים (כי JSON מחזיר Strings)
+      const parsedData = data.map((d) => ({
+        ...d,
+        lastUpdate: new Date(d.lastUpdate),
+        lastIncident: d.lastIncident ? new Date(d.lastIncident) : null,
+      }));
+
+      setDevices(parsedData);
+      setLastUpdate(new Date());
+    } catch (error) {
+      console.error("Error loading devices:", error);
+    } finally {
       setIsLoading(false);
-    }, 800);
-    return () => clearTimeout(timer);
+    }
   }, [selectedCompany]);
 
-  // Auto-refresh simulation
+  // טעינה ראשונית ובעת החלפת חברה
   useEffect(() => {
-    const interval = setInterval(() => {
-      refreshData();
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [devices]);
+    setIsLoading(true);
+    fetchDevices();
+  }, [fetchDevices]);
 
-  const refreshData = useCallback(() => {
+  // 3. Real Backend Refresh Logic
+  const refreshData = useCallback(async () => {
     setIsRefreshing(true);
-    setTimeout(() => {
-      setDevices((prev) => {
-        const { updatedDevices, changedIds } = simulateStatusChange(prev);
-        setChangedDeviceIds(changedIds);
-        setTimeout(() => setChangedDeviceIds(new Set()), 2000);
-        return updatedDevices;
-      });
-      setLastUpdate(new Date());
+    try {
+      // קריאה לשרת כדי שיבצע סימולציה של שינויים במסד הנתונים
+      await fetch(`${API_URL}/refresh-simulation`, { method: "POST" });
+
+      // לאחר שהשרת עדכן את ה-DB, נשלוף את הנתונים החדשים
+      await fetchDevices();
+
+      // סימון ויזואלי של שינויים (אופציונלי - דורש לוגיקה מורכבת יותר להשוואה, כרגע נשאיר פשוט)
+      setChangedDeviceIds(new Set());
+    } catch (error) {
+      console.error("Refresh failed:", error);
+    } finally {
       setIsRefreshing(false);
-    }, 300);
-  }, []);
+    }
+  }, [fetchDevices]);
+
+  // Auto-refresh every 30 seconds
+  useEffect(() => {
+    const interval = setInterval(refreshData, 30000);
+    return () => clearInterval(interval);
+  }, [refreshData]);
 
   const handleDeviceClick = (device: Device) => {
     setSelectedDevice(device);
     setIsDrawerOpen(true);
   };
 
-  // 3. Filtering Logic (Uses the debounced value)
+  // Callback when a device is updated inside the Drawer (Restart/Retry)
+  const handleDeviceUpdate = (updatedDevice: Device) => {
+    // Update local list
+    setDevices((prev) =>
+      prev.map((d) =>
+        d.id === updatedDevice.id
+          ? {
+              ...updatedDevice,
+              lastUpdate: new Date(updatedDevice.lastUpdate), // Fix date string
+              lastIncident: updatedDevice.lastIncident
+                ? new Date(updatedDevice.lastIncident)
+                : null,
+            }
+          : d
+      )
+    );
+    // Update selected device view
+    setSelectedDevice((prev) =>
+      prev && prev.id === updatedDevice.id
+        ? {
+            ...updatedDevice,
+            lastUpdate: new Date(updatedDevice.lastUpdate),
+            lastIncident: updatedDevice.lastIncident
+              ? new Date(updatedDevice.lastIncident)
+              : null,
+          }
+        : prev
+    );
+  };
+
+  // Client-side filtering (Search & Status)
   const filteredDevices = devices.filter((device) => {
     const matchesSearch =
       device.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
@@ -104,6 +165,7 @@ export default function Dashboard() {
     warning: devices.filter((d) => d.status === "warning").length,
   };
 
+  
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "#f8fafc", pb: 4 }}>
       <TopNavbar
@@ -112,6 +174,8 @@ export default function Dashboard() {
         lastUpdate={lastUpdate}
         isRefreshing={isRefreshing}
         onRefresh={refreshData}
+        alerts={alerts}
+        onNotificationClick={handleDeviceClick}
       />
 
       <Container maxWidth={false} sx={{ maxWidth: "1600px", pt: 4 }}>
@@ -149,12 +213,11 @@ export default function Dashboard() {
           setStatusFilter={setStatusFilter}
           totalFiltered={filteredDevices.length}
           totalDevices={devices.length}
+          onAddDevice={() => setIsAddDeviceOpen(true)}
         />
 
-        {/* 4. Table vs Loading vs Empty State Logic */}
         <Box sx={{ position: "relative" }}>
           {isLoading ? (
-            // Skeleton Loader
             <Stack spacing={1}>
               {[...Array(8)].map((_, i) => (
                 <Skeleton
@@ -172,7 +235,6 @@ export default function Dashboard() {
               changedDeviceIds={changedDeviceIds}
             />
           ) : (
-            // 5. Empty State UI
             <Paper
               elevation={0}
               sx={{
@@ -202,8 +264,7 @@ export default function Dashboard() {
                   No devices found
                 </Typography>
                 <Typography variant="body2" color="#64748b">
-                  Try adjusting your filters or search terms to find what you're
-                  looking for.
+                  Try adjusting your filters or search terms.
                 </Typography>
               </Box>
               <Button
@@ -231,6 +292,14 @@ export default function Dashboard() {
         device={selectedDevice}
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
+        onDeviceUpdate={handleDeviceUpdate} // העברת הפונקציה החדשה
+        onNeedRefresh={fetchDevices}
+      />
+
+      <AddDeviceDialog
+        open={isAddDeviceOpen}
+        onClose={() => setIsAddDeviceOpen(false)}
+        onSuccess={refreshData}
       />
     </Box>
   );

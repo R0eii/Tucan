@@ -9,7 +9,7 @@ import {
   Paper,
   Typography,
 } from "@mui/material";
-import { Filter, Search, SlidersHorizontal, X } from "lucide-react";
+import { Filter, Plus, Search, SlidersHorizontal, X } from "lucide-react";
 import React from "react";
 
 interface FilterBarProps {
@@ -19,6 +19,7 @@ interface FilterBarProps {
   setStatusFilter: (s: string) => void;
   totalFiltered: number;
   totalDevices: number;
+  onAddDevice: () => void;
 }
 
 export default function FilterBar({
@@ -28,6 +29,7 @@ export default function FilterBar({
   setStatusFilter,
   totalFiltered,
   totalDevices,
+  onAddDevice,
 }: FilterBarProps) {
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
 
@@ -97,6 +99,19 @@ export default function FilterBar({
         <Box
           sx={{ display: "flex", gap: 1.5, width: { xs: "100%", md: "auto" } }}
         >
+          <Button
+            variant="contained"
+            startIcon={<Plus size={18} />}
+            onClick={onAddDevice}
+            sx={{
+              fontWeight: 600,
+              px: 2,
+              bgcolor: "#0f172a", // or use 'primary.main'
+              whiteSpace: "nowrap",
+            }}
+          >
+            Add Device
+          </Button>
           {/* Status Dropdown */}
           <Button
             variant="outlined"

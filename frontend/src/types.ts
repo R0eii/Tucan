@@ -17,6 +17,7 @@ export interface Device {
   lastUpdate: Date;
   department: string;
   location: string;
+  company: string;
   deviceModel: string;
   os: string;
   battery: number;

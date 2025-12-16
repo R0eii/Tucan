@@ -6,12 +6,14 @@ import {
   Divider,
   Drawer,
   Grid,
+  IconButton,
   LinearProgress,
   List,
   ListItem,
   ListItemAvatar,
   ListItemText,
   Stack,
+  TextField,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
@@ -23,24 +25,42 @@ import {
   AlertTriangle,
   Clock,
   Cpu,
+  Edit2,
   Globe,
   HardDrive,
   History,
   MapPin,
   Power,
   RefreshCw,
+  Save,
   Shield,
   Smartphone,
+  Trash2,
   Wifi,
   WifiOff,
+  Briefcase,
+  Monitor,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Device, DeviceStatus } from "../../types";
 
+// ✅ Updated Interface: Added onNeedRefresh to trigger parent refetch
 interface DeviceDrawerProps {
   device: Device | null;
   isOpen: boolean;
   onClose: () => void;
+  onDeviceUpdate: (updatedDevice: Device) => void; // Updates local state immediately
+  onNeedRefresh: () => void; // NEW: Triggers a full list refresh from the server
+}
+
+interface EditFormState {
+  name?: string;
+  ip?: string;
+  mac?: string;
+  location?: string;
+  deviceModel?: string;
+  os?: string;
+  department?: string;
 }
 
 const StatusIcon = ({ status }: { status: DeviceStatus }) => {
@@ -59,7 +79,14 @@ const StatusIcon = ({ status }: { status: DeviceStatus }) => {
   );
 };
 
-const InfoCard = ({ icon: Icon, label, value, subValue }: any) => (
+interface InfoCardProps {
+  icon: React.ElementType;
+  label: string;
+  value: string | number | undefined;
+  subValue?: string;
+}
+
+const InfoCard = ({ icon: Icon, label, value, subValue }: InfoCardProps) => (
   <Box
     sx={{
       bgcolor: "#f8fafc",
@@ -68,6 +95,7 @@ const InfoCard = ({ icon: Icon, label, value, subValue }: any) => (
       display: "flex",
       gap: 2,
       alignItems: "flex-start",
+      height: "100%",
     }}
   >
     <Box
@@ -94,7 +122,7 @@ const InfoCard = ({ icon: Icon, label, value, subValue }: any) => (
         {label}
       </Typography>
       <Typography variant="body2" fontWeight={600} color="#334155" noWrap>
-        {value}
+        {value || "-"}
       </Typography>
       {subValue && (
         <Typography variant="caption" color="#94a3b8">
@@ -134,26 +162,23 @@ const MetricBar = ({
 
 const HealthCenter = ({ device }: { device: any }) => {
   const theme = useTheme();
-  // Inside HealthCenter component
   const [range, setRange] = useState("24h");
   const [hoveredItem, setHoveredItem] = useState<any>(null);
 
-  // Logic to determine which data to show based on the toggle
   const displayData = useMemo(() => {
+    if (!device) return [];
     switch (range) {
       case "24h":
-        return device.recentHistory;
+        return device.recentHistory || [];
       case "7d":
-        // Slices the last 7 days from the 90-day array
-        return device.longTermHistory.slice(-7);
+        return (device.longTermHistory || []).slice(-7);
       case "90d":
-        return device.longTermHistory;
+        return device.longTermHistory || [];
       default:
-        return device.recentHistory;
+        return device.recentHistory || [];
     }
   }, [range, device]);
 
-  // Update the Uptime calculation to use the new 'displayData'
   const avgUptime = useMemo(() => {
     if (displayData.length === 0) return 0;
     const sum = displayData.reduce(
@@ -295,9 +320,9 @@ const HealthCenter = ({ device }: { device: any }) => {
         </Typography>
         <Box />
       </Stack>
-      {/* The Visual Timeline/Heatmap */}
+
       <Box
-        onMouseLeave={() => setHoveredItem(null)} // Clear when leaving the grid
+        onMouseLeave={() => setHoveredItem(null)}
         sx={{
           display: "flex",
           gap: "3px",
@@ -308,7 +333,7 @@ const HealthCenter = ({ device }: { device: any }) => {
         {displayData.map((snap: any, i: number) => (
           <Box
             key={i}
-            onMouseEnter={() => setHoveredItem(snap)} // Set hovered item
+            onMouseEnter={() => setHoveredItem(snap)}
             sx={{
               flex: range === "90d" ? "0 0 14px" : 1,
               height: range === "90d" ? "14px" : "100%",
@@ -323,7 +348,6 @@ const HealthCenter = ({ device }: { device: any }) => {
               opacity: hoveredItem === snap ? 1 : 0.7,
               transition: "all 0.1s ease",
               cursor: "pointer",
-              // Visual "Pop" without the laggy Tooltip
               transform: hoveredItem === snap ? "scale(1.05)" : "scale(1)",
               zIndex: hoveredItem === snap ? 10 : 1,
               boxShadow:
@@ -349,7 +373,88 @@ export default function DeviceDrawer({
   device,
   isOpen,
   onClose,
+  onDeviceUpdate,
+  onNeedRefresh,
 }: DeviceDrawerProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState<EditFormState>({});
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  useEffect(() => {
+    if (device) {
+      setIsEditing(false);
+      setEditForm({
+        name: device.name,
+        ip: device.ip,
+        mac: device.mac,
+        location: device.location,
+        deviceModel: device.deviceModel,
+        os: device.os,
+        department: device.department,
+      });
+    }
+  }, [device]);
+
+  // ✅ DELETE with live update
+  const handleDelete = async () => {
+    if (!device || !confirm("Delete this device?")) return;
+    try {
+      await fetch(`http://localhost:5000/api/devices/${device.id}`, {
+        method: "DELETE",
+      });
+      onNeedRefresh(); // Refresh parent list
+      onClose(); // Close drawer
+    } catch (error) {
+      console.error("Delete failed", error);
+    }
+  };
+
+  // ✅ SAVE with live update
+  const handleSave = async () => {
+    if (!device) return;
+    try {
+      const res = await fetch(
+        `http://localhost:5000/api/devices/${device.id}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(editForm),
+        }
+      );
+      if (res.ok) {
+        const updated = await res.json();
+        onDeviceUpdate(updated); // Update local view immediately
+        onNeedRefresh(); // Ensure parent list is synced (e.g. if sorting changed)
+        setIsEditing(false);
+      }
+    } catch (error) {
+      console.error("Update failed", error);
+    }
+  };
+
+  // ✅ ACTIONS (Retry/Restart) with live update
+  const performAction = async (action: "retry" | "restart") => {
+    if (!device) return;
+    setIsProcessing(true);
+    try {
+      const response = await fetch(
+        `http://localhost:5000/api/devices/${device.id}/${action}`,
+        { method: "POST" }
+      );
+      if (response.ok) {
+        const updatedDevice = await response.json();
+        onDeviceUpdate(updatedDevice);
+        onNeedRefresh(); // Refresh parent list status
+      } else {
+        console.error("Action failed");
+      }
+    } catch (error) {
+      console.error("Error performing action:", error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   if (!device) return null;
 
   const activityLogs = [
@@ -409,6 +514,28 @@ export default function DeviceDrawer({
             sx={{ fontWeight: 600, border: "1px solid" }}
           />
         </Box>
+        <Box
+          sx={{
+            position: "absolute",
+            top: 20,
+            right: 60,
+            display: "flex",
+            gap: 1,
+          }}
+        >
+          {isEditing ? (
+            <IconButton onClick={handleSave} color="success">
+              <Save size={20} />
+            </IconButton>
+          ) : (
+            <IconButton onClick={() => setIsEditing(true)}>
+              <Edit2 size={20} />
+            </IconButton>
+          )}
+          <IconButton onClick={handleDelete} color="error">
+            <Trash2 size={20} />
+          </IconButton>
+        </Box>
       </Box>
 
       <Box sx={{ p: 3, overflowY: "auto" }}>
@@ -449,18 +576,22 @@ export default function DeviceDrawer({
           <Button
             fullWidth
             variant="outlined"
+            onClick={() => performAction("retry")}
+            disabled={isProcessing}
             startIcon={<RefreshCw size={16} />}
             sx={{ py: 1.5, borderColor: "#e2e8f0", color: "#64748b" }}
           >
-            Retry
+            {isProcessing ? "Processing..." : "Retry"}
           </Button>
           <Button
             fullWidth
             variant="outlined"
+            onClick={() => performAction("restart")}
+            disabled={isProcessing}
             startIcon={<Power size={16} />}
             sx={{ py: 1.5, borderColor: "#e2e8f0", color: "#64748b" }}
           >
-            Restart
+            {isProcessing ? "Processing..." : "Restart"}
           </Button>
         </Box>
 
@@ -472,28 +603,105 @@ export default function DeviceDrawer({
         >
           <Smartphone size={16} /> Device Information
         </Typography>
+
         <Grid container spacing={2} sx={{ mb: 3 }}>
           <Grid size={{ xs: 6 }}>
-            <InfoCard icon={Globe} label="IP Address" value={device.ip} />
+            {isEditing ? (
+              <TextField
+                label="IP"
+                fullWidth
+                size="small"
+                value={editForm.ip || ""}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, ip: e.target.value })
+                }
+              />
+            ) : (
+              <InfoCard icon={Globe} label="IP Address" value={device.ip} />
+            )}
           </Grid>
           <Grid size={{ xs: 6 }}>
-            <InfoCard icon={Shield} label="MAC" value={device.mac} />
+            {isEditing ? (
+              <TextField
+                label="MAC"
+                fullWidth
+                size="small"
+                value={editForm.mac || ""}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, mac: e.target.value })
+                }
+              />
+            ) : (
+              <InfoCard icon={Shield} label="MAC" value={device.mac} />
+            )}
           </Grid>
           <Grid size={{ xs: 6 }}>
-            <InfoCard
-              icon={Smartphone}
-              label="Model"
-              value={device.deviceModel}
-            />
+            {isEditing ? (
+              <TextField
+                label="Model"
+                fullWidth
+                size="small"
+                value={editForm.deviceModel || ""}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, deviceModel: e.target.value })
+                }
+              />
+            ) : (
+              <InfoCard icon={Cpu} label="Model" value={device.deviceModel} />
+            )}
           </Grid>
           <Grid size={{ xs: 6 }}>
-            <InfoCard icon={Cpu} label="OS" value={device.os} />
+            {isEditing ? (
+              <TextField
+                label="OS"
+                fullWidth
+                size="small"
+                value={editForm.os || ""}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, os: e.target.value })
+                }
+              />
+            ) : (
+              <InfoCard icon={Monitor} label="OS" value={device.os} />
+            )}
           </Grid>
           <Grid size={{ xs: 6 }}>
-            <InfoCard icon={MapPin} label="Location" value={device.location} />
+            {isEditing ? (
+              <TextField
+                label="Location"
+                fullWidth
+                size="small"
+                value={editForm.location || ""}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, location: e.target.value })
+                }
+              />
+            ) : (
+              <InfoCard
+                icon={MapPin}
+                label="Location"
+                value={device.location}
+              />
+            )}
           </Grid>
           <Grid size={{ xs: 6 }}>
-            <InfoCard icon={HardDrive} label="Dept" value={device.department} />
+            {isEditing ? (
+              <TextField
+                label="Dept"
+                fullWidth
+                size="small"
+                value={editForm.department || ""}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, department: e.target.value })
+                }
+              />
+            ) : (
+              <InfoCard
+                icon={Briefcase}
+                label="Department"
+                value={device.department}
+              />
+            )}
           </Grid>
         </Grid>
 
